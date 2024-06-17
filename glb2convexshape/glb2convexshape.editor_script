@@ -1,0 +1,28 @@
+local glb2convexshape = require("glb2convexshape.glb2convexshape")
+
+local M = {}
+
+local function get_extension(path)
+    return path:match("%.(%w+)$")
+end
+
+function M.get_commands()
+    return {
+        {
+            label = "Generate convexshape file",
+            locations = {"Edit", "Assets"},
+            query = {
+                selection = {type = "resource", cardinality = "one"}
+            },
+            active = function(opts)
+                return get_extension(editor.get(opts.selection, "path")) == "glb"
+            end,
+            run = function(opts)
+                local path = editor.get(opts.selection, "path")
+                glb2convexshape.generate_convexshape(path)
+            end
+        }
+    }
+end
+
+return M
