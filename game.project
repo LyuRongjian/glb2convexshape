@@ -20,4 +20,5 @@ include_dirs = glb2convexshape
 
 [physics]
 type = 3D
+debug = 1
 
