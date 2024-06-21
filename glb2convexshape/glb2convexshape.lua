@@ -42,6 +42,41 @@ local accessors_type = {
     ["MAT4"] = 16
 }
 
+function print_r ( t )  
+    local print_r_cache={}
+    local function sub_print_r(t,indent)
+        if (print_r_cache[tostring(t)]) then
+            print(indent.."*"..tostring(t))
+        else
+            print_r_cache[tostring(t)]=true
+            if (type(t)=="table") then
+                for pos,val in pairs(t) do
+                    if (type(val)=="table") then
+                        print(indent.."["..pos.."] => "..tostring(t).." {")
+                        sub_print_r(val,indent..string.rep(" ",string.len(pos)+8))
+                        print(indent..string.rep(" ",string.len(pos)+6).."}")
+                    elseif (type(val)=="string") then
+                        print(indent.."["..pos..'] => "'..val..'"')
+                    else
+                        print(indent.."["..pos.."] => "..tostring(val))
+                    end
+                end
+            else
+                print(indent..tostring(t))
+            end
+        end
+    end
+    if (type(t)=="table") then
+        print(tostring(t).." {")
+        sub_print_r(t,"  ")
+        print("}")
+    else
+        sub_print_r(t,"  ")
+    end
+    print()
+end
+
+
 local function read(path)
     local file = assert(io.open(path, "rb"))
     local data = file:read("*a")
@@ -127,6 +162,7 @@ function M.generate_convexshape(glb_path)
     --type check
     assert(glb.chunk0type == "JSON", "Chunk 0 type is not JSON") 
     glb.chunk0data, pos = str_unpack(glb_file, pos, glb.chunk0length)
+    -- print(glb.chunk0data)
     glb.json = lunajson.decode(glb.chunk0data)
     assert(string.sub(glb.json.asset.version, 1, 1) == "2", "json.asset.version not match")
     
@@ -138,44 +174,55 @@ function M.generate_convexshape(glb_path)
     end
 
     glb.chunk1data, _ = str_unpack(glb_file, pos, glb.chunk1length)
-    -- print(glb.chunk1data)
     local line_num = 0
-    -- get first "VEC3" data, which is vertex data
-    for index, value in ipairs(glb.json.bufferViews) do
-        glb.bin[index], _ = str_unpack(glb.chunk1data, (value.byteOffset or 0) + 1, value.byteLength)
+    local close_point = ""
+    assert(glb.json.meshes[1].primitives[1].attributes.POSITION ~= nil, "Position index lost!")
+    local postion_index = glb.json.meshes[1].primitives[1].attributes.POSITION + 1
 
-        if glb.json.accessors[index].type == "VEC3" then
-            local temp_pos = (glb.json.accessors[index].byteOffset or 0) + 1
-            local temp_data = {} --make empyt
-            --accessors offset
-            local cvxshp_file = io.open(glb.name..".convexshape", "w+")
-            io.output(cvxshp_file)
-            io.write("shape_type: TYPE_HULL")
-            for i = 1, glb.json.accessors[index].count, 1 do
-                for j = 1, accessors_type[glb.json.accessors[index].type], 1 do
-                    temp_data[j], temp_pos = type_unpack(component_type[glb.json.accessors[index].componentType], 
-                    glb.bin[index], temp_pos)
-                    if glb.json.accessors[index].max[j] ~= nil then
-                        if temp_data[j] > glb.json.accessors[index].max[j] then
-                            temp_data[j] = glb.json.accessors[index].max[j]
-                        end
-                    end
+    -- get position data
+    glb.bin[postion_index], _ = str_unpack(glb.chunk1data, (glb.json.bufferViews[postion_index].byteOffset or 0) + 1, 
+        glb.json.bufferViews[postion_index].byteLength)
 
-                    if glb.json.accessors[index].min[j] ~= nil then
-                        if temp_data[j] < glb.json.accessors[index].min[j] then
-                            temp_data[j] = glb.json.accessors[index].min[j]
-                        end
-                    end
+    local temp_pos = (glb.json.accessors[postion_index].byteOffset or 0) + 1
+    local temp_data = {} --make empyt
+    
+    --accessors offset
+    local cvxshp_file = io.open(glb.name..".convexshape", "w+")
+    io.output(cvxshp_file)
+    io.write("shape_type: TYPE_HULL")
+    for i = 1, glb.json.accessors[postion_index].count, 1 do
+        for j = 1, accessors_type[glb.json.accessors[postion_index].type], 1 do
+            temp_data[j], temp_pos = type_unpack(component_type[glb.json.accessors[postion_index].componentType], 
+            glb.bin[postion_index], temp_pos)
+            if glb.json.accessors[postion_index].max[j] ~= nil then
+                if temp_data[j] > glb.json.accessors[postion_index].max[j] then
+                    temp_data[j] = glb.json.accessors[postion_index].max[j]
                 end
-                line_num = line_num + 1
-                -- print(tostring(line_num) .. ": (" .. table.concat(temp_data, ", ") .. "), ")
-                io.write("\ndata: "..table.concat(temp_data, " data: "))
             end
-            io.close(cvxshp_file)
-            print("Generated "..glb.name..".convexshape.")
-            break
+
+            if glb.json.accessors[postion_index].min[j] ~= nil then
+                if temp_data[j] < glb.json.accessors[postion_index].min[j] then
+                    temp_data[j] = glb.json.accessors[postion_index].min[j]
+                end
+            end
         end
+
+        -- if line_num == 0 then
+        --     close_point = "\ndata: "..table.concat(temp_data, " data: ")
+        -- end
+        io.write("\ndata: "..table.concat(temp_data, " data: "))
+        -- io.write("scatter3d("..table.concat(temp_data, ",")..");\n")
+        line_num = line_num + 1
+        -- if line_num == 4 then
+        --     io.write(close_point)
+        --     io.write("\ndata: "..table.concat(temp_data, " data: "))
+        --     line_num = 0
+        -- end
     end
+    -- io.write(")")
+    io.close(cvxshp_file)
+    print("Generated "..glb.name..".convexshape.")
+
 end
 
 return M
