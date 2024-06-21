@@ -14,7 +14,9 @@ local glb = {
     chunk1length = 0,
     chunk1type = "",
     chunk1data = "",
-    bin = {}
+    bin = {},
+    vertex = {},
+    indices = {}
 }
 
 -- 5120 - signed byte - 8
@@ -174,52 +176,58 @@ function M.generate_convexshape(glb_path)
     end
 
     glb.chunk1data, _ = str_unpack(glb_file, pos, glb.chunk1length)
-    local line_num = 0
-    local close_point = ""
-    assert(glb.json.meshes[1].primitives[1].attributes.POSITION ~= nil, "Position index lost!")
+    local vertex_num = 0
+    assert(glb.json.meshes[1].primitives[1].attributes.POSITION ~= nil, "Position data lost!")
     local postion_index = glb.json.meshes[1].primitives[1].attributes.POSITION + 1
+    assert(glb.json.meshes[1].primitives[1].indices ~= nil, "Indices data lost!")
+    local indices_index = glb.json.meshes[1].primitives[1].indices + 1
 
-    -- get position data
-    glb.bin[postion_index], _ = str_unpack(glb.chunk1data, (glb.json.bufferViews[postion_index].byteOffset or 0) + 1, 
-        glb.json.bufferViews[postion_index].byteLength)
+    for index, value in ipairs(glb.json.bufferViews) do
+        if index ==  postion_index or index == indices_index then
+            -- get data
+            glb.bin[index], _ = str_unpack(glb.chunk1data, (value.byteOffset or 0) + 1, value.byteLength)
 
-    local temp_pos = (glb.json.accessors[postion_index].byteOffset or 0) + 1
-    local temp_data = {} --make empyt
-    
-    --accessors offset
-    local cvxshp_file = io.open(glb.name..".convexshape", "w+")
-    io.output(cvxshp_file)
-    io.write("shape_type: TYPE_HULL")
-    for i = 1, glb.json.accessors[postion_index].count, 1 do
-        for j = 1, accessors_type[glb.json.accessors[postion_index].type], 1 do
-            temp_data[j], temp_pos = type_unpack(component_type[glb.json.accessors[postion_index].componentType], 
-            glb.bin[postion_index], temp_pos)
-            if glb.json.accessors[postion_index].max[j] ~= nil then
-                if temp_data[j] > glb.json.accessors[postion_index].max[j] then
-                    temp_data[j] = glb.json.accessors[postion_index].max[j]
+            local temp_pos = (glb.json.accessors[index].byteOffset or 0) + 1
+            local temp_data = {} --make empyt
+
+            --accessors offset
+            for i = 1, glb.json.accessors[index].count, 1 do
+                for j = 1, accessors_type[glb.json.accessors[index].type], 1 do
+                    temp_data[j], temp_pos = type_unpack(component_type[glb.json.accessors[index].componentType], 
+                    glb.bin[index], temp_pos)
+                    if glb.json.accessors[index].max[j] ~= nil then
+                        if temp_data[j] > glb.json.accessors[index].max[j] then
+                            temp_data[j] = glb.json.accessors[index].max[j]
+                        end
+                    end
+
+                    if glb.json.accessors[index].min[j] ~= nil then
+                        if temp_data[j] < glb.json.accessors[index].min[j] then
+                            temp_data[j] = glb.json.accessors[index].min[j]
+                        end
+                    end
                 end
-            end
-
-            if glb.json.accessors[postion_index].min[j] ~= nil then
-                if temp_data[j] < glb.json.accessors[postion_index].min[j] then
-                    temp_data[j] = glb.json.accessors[postion_index].min[j]
+                if index ==  postion_index then
+                    glb.vertex[i] = "\ndata: "..table.concat(temp_data, " data: ") 
+                    -- print(tostring(i)..": "..glb.vertex[i])
+                elseif index == indices_index then
+                    glb.indices[i] = temp_data[1]
+                    -- print(tostring(i).."~"..tostring(glb.indices[i])..",")
                 end
             end
         end
-
-        -- if line_num == 0 then
-        --     close_point = "\ndata: "..table.concat(temp_data, " data: ")
-        -- end
-        io.write("\ndata: "..table.concat(temp_data, " data: "))
-        -- io.write("scatter3d("..table.concat(temp_data, ",")..");\n")
-        line_num = line_num + 1
-        -- if line_num == 4 then
-        --     io.write(close_point)
-        --     io.write("\ndata: "..table.concat(temp_data, " data: "))
-        --     line_num = 0
-        -- end
     end
-    -- io.write(")")
+    local cvxshp_file = io.open(glb.name..".convexshape", "w+")
+    io.output(cvxshp_file)
+    io.write("shape_type: TYPE_HULL")
+    for index, value in ipairs(glb.indices) do
+        print("i:"..tostring(index)..", v:"..tostring(value))
+        io.write(glb.vertex[value + 1])
+        if index % 3 == 0 then
+            io.write(glb.vertex[glb.indices[index - 2]])
+            io.write(glb.vertex[value + 1])
+        end
+    end
     io.close(cvxshp_file)
     print("Generated "..glb.name..".convexshape.")
 
