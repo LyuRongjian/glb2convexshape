@@ -19,6 +19,7 @@ function M.get_commands()
             end,
             run = function(opts)
                 local path = editor.get(opts.selection, "path")
+                editor.create_directory(path:sub(1, -5).."-convexshapes")
                 glb2convexshape.generate_convexshape(path)
             end
         }

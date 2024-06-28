@@ -3,7 +3,8 @@ local lunajson = require("glb2convexshape.lunajson.lunajson")
 local M = {}
 
 local glb = {
-    name = "",
+    path = "",
+    namr = "",
     magic = "",
     version = 0,
     length = 0,
@@ -141,7 +142,7 @@ end
 function M.generate_convexshape(glb_path)
     local pos = 1
     print("Generating convexshape file from "..glb_path:sub(2, -1)..".")
-    glb.name = glb_path:sub(2, -5)
+    glb.path = glb_path:sub(2, -5)
     local glb_file = read(glb_path:sub(2))
     
     -- check magic
@@ -217,20 +218,31 @@ function M.generate_convexshape(glb_path)
             end
         end
     end
-    local cvxshp_file = io.open(glb.name..".convexshape", "w+")
-    io.output(cvxshp_file)
-    io.write("shape_type: TYPE_HULL")
+    local slash_pos_before_name = string.find(string.reverse(glb.path), '/')
+    
+    glb.name = string.sub(glb.path, -slash_pos_before_name)
+    print(glb.name)
+    print(glb.path)
+    local cvxshp_file 
+    local file_num = 0
+    -- io.output(cvxshp_file)
+    -- io.write("shape_type: TYPE_HULL")
     for index, value in ipairs(glb.indices) do
-        print("i:"..tostring(index)..", v:"..tostring(value))
-        io.write(glb.vertex[value + 1])
-        if index % 3 == 0 then
-            io.write(glb.vertex[glb.indices[index - 2]])
-            io.write(glb.vertex[value + 1])
+        -- print("i:"..tostring(index)..", v:"..tostring(value))
+        -- io.write(glb.vertex[value + 1])
+        if (index - 1) % 3 == 0 then
+            file_num  = file_num + 1
+            if index > 1 then
+                io.close(cvxshp_file)
+            end
+            print("Generated "..glb.path.."-convexshapes"..glb.name..'-'..tostring(file_num)..".convexshape")
+            cvxshp_file = io.open(glb.path.."-convexshapes"..glb.name..'-'..tostring(file_num)..".convexshape", "w+")
+            io.output(cvxshp_file)
+            io.write("shape_type: TYPE_HULL")
         end
+        io.write(glb.vertex[value + 1])
     end
     io.close(cvxshp_file)
-    print("Generated "..glb.name..".convexshape.")
-
 end
 
 return M
