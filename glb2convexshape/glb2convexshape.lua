@@ -2,6 +2,8 @@ local lunajson = require("glb2convexshape.lunajson.lunajson")
 
 local M = {}
 
+local model_offset = 0.04
+
 local glb = {
     path = "",
     namr = "",
@@ -17,7 +19,8 @@ local glb = {
     chunk1data = "",
     bin = {},
     vertex = {},
-    indices = {}
+    indices = {},
+    unit_normal_vector = {}
 }
 
 -- 5120 - signed byte - 8
@@ -178,19 +181,33 @@ function M.generate_convexshape(glb_path)
 
     glb.chunk1data, _ = str_unpack(glb_file, pos, glb.chunk1length)
     local vertex_num = 0
-    assert(glb.json.meshes[1].primitives[1].attributes.POSITION ~= nil, "Position data lost!")
+    assert(type(glb.json.meshes[1].primitives[1].attributes.POSITION) == "number", "Position data lost!")
     local postion_index = glb.json.meshes[1].primitives[1].attributes.POSITION + 1
-    assert(glb.json.meshes[1].primitives[1].indices ~= nil, "Indices data lost!")
+    
+    assert(type(glb.json.meshes[1].primitives[1].indices) == "number", "Indices data lost!")
     local indices_index = glb.json.meshes[1].primitives[1].indices + 1
+    
+    local mesh_mode = glb.json.meshes[1].primitives[1].model
+    assert(mesh_mode == nil or mesh_mode == 4 or mesh_mode == 5 or mesh_mode == 6, "Mesh mode not support!")
 
+    assert(type(glb.json.meshes[1].primitives[1].attributes.NORMAL) == "number", "Normal data lost!")
+    local normal_index = glb.json.meshes[1].primitives[1].attributes.NORMAL + 1 
+    print("NORMAL:"..tostring(normal_index))
+    assert(type(glb.json.meshes[1].primitives[1].attributes.TANGENT) == "number", "Tangent data lost!")
+    local tangent_index = glb.json.meshes[1].primitives[1].attributes.TANGENT + 1 
+    print("TANGENT:"..tostring(tangent_index))
+    
     for index, value in ipairs(glb.json.bufferViews) do
-        if index ==  postion_index or index == indices_index then
+        if index == postion_index 
+        or index == indices_index 
+        or index == normal_index 
+        then
             -- get data
             glb.bin[index], _ = str_unpack(glb.chunk1data, (value.byteOffset or 0) + 1, value.byteLength)
 
             local temp_pos = (glb.json.accessors[index].byteOffset or 0) + 1
-            local temp_data = {} --make empyt
-
+            local temp_data = {} --empty
+            
             --accessors offset
             for i = 1, glb.json.accessors[index].count, 1 do
                 for j = 1, accessors_type[glb.json.accessors[index].type], 1 do
@@ -208,37 +225,95 @@ function M.generate_convexshape(glb_path)
                         end
                     end
                 end
-                if index ==  postion_index then
-                    glb.vertex[i] = "\ndata: "..table.concat(temp_data, " data: ") 
-                    -- print(tostring(i)..": "..glb.vertex[i])
+                
+                if index == postion_index then
+                    glb.vertex[i] = {}
+                    for idx, val in ipairs(temp_data) do
+                        glb.vertex[i][idx] = val
+                    end 
+                    -- print(tostring(i)..": "..table.concat(glb.vertex[i], ","))
+                    -- print("temp:"..table.concat(temp_data, ","))
                 elseif index == indices_index then
                     glb.indices[i] = temp_data[1]
                     -- print(tostring(i).."~"..tostring(glb.indices[i])..",")
+                elseif index == normal_index then
+                    -- print("( "..table.concat(temp_data, ", ").." )\n")
+                    glb.unit_normal_vector[i] = {}
+                    for idx, val in ipairs(temp_data) do
+                        glb.unit_normal_vector[i][idx] = -val     
+                    end
+                    -- local mold_len = 0
+                    -- for _, v in ipairs(temp_data) do
+                    --     mold_len = (v ^ 2) + mold_len
+                    -- end
+                    -- mold_len = math.sqrt(mold_len)
+                    -- glb.unit_normal_vector[i] = {}
+                    -- -- get inverse vector
+                    -- for p, v in ipairs(temp_data) do
+                    --     glb.unit_normal_vector[i][p] = -v/mold_len
+                    -- end
                 end
             end
         end
     end
+
+    -- for index, value in ipairs(glb.vertex) do
+    --     for idx, val in ipairs(value) do
+    --         glb.vertex[index][idx] = val + (model_offset * glb.unit_normal_vector[index][idx])
+    --     end
+    -- end
+    
     local slash_pos_before_name = string.find(string.reverse(glb.path), '/')
     
     glb.name = string.sub(glb.path, -slash_pos_before_name)
     local cvxshp_file 
     local file_num = 0
-    -- io.output(cvxshp_file)
-    -- io.write("shape_type: TYPE_HULL")
+
     for index, value in ipairs(glb.indices) do
-        -- print("i:"..tostring(index)..", v:"..tostring(value))
-        -- io.write(glb.vertex[value + 1])
-        if (index - 1) % 3 == 0 then
-            file_num  = file_num + 1
-            if index > 1 then
-                io.close(cvxshp_file)
+        -- Each consecutive set of three vertices defines a single triangle primitive
+        if mesh_mode == nil or mesh_mode == 4 then
+            if (index - 1) % 3 == 0 then
+                file_num  = file_num + 1
+                if index > 1 then
+                    io.close(cvxshp_file)
+                end
+                print("Generated "..glb.path.."-convexshapes"..glb.name..'-'..tostring(file_num)..".convexshape")
+                cvxshp_file = io.open(glb.path.."-convexshapes"..glb.name..'-'..tostring(file_num)..".convexshape", "w+")
+                io.output(cvxshp_file)
+                io.write("shape_type: TYPE_HULL")
             end
-            print("Generated "..glb.path.."-convexshapes"..glb.name..'-'..tostring(file_num)..".convexshape")
-            cvxshp_file = io.open(glb.path.."-convexshapes"..glb.name..'-'..tostring(file_num)..".convexshape", "w+")
-            io.output(cvxshp_file)
-            io.write("shape_type: TYPE_HULL")
+            io.write("\ndata: "..table.concat(glb.vertex[value + 1], " data: "))
+        -- One triangle primitive is defined by each vertex and the two vertices that follow it    
+        elseif mesh_mode == 5 then 
+            if glb.indices[index + 1] ~= nil and glb.indices[index + 2] ~= nil then
+                file_num  = file_num + 1
+                if index > 1 then
+                    io.close(cvxshp_file)
+                end                
+                print("Generated "..glb.path.."-convexshapes"..glb.name..'-'..tostring(file_num)..".convexshape")
+                cvxshp_file = io.open(glb.path.."-convexshapes"..glb.name..'-'..tostring(file_num)..".convexshape", "w+")
+                io.output(cvxshp_file)
+                io.write("shape_type: TYPE_HULL")
+                io.write("\ndata: "..table.concat(glb.vertex[glb.indices[index] + 1], " data: "))
+                io.write("\ndata: "..table.concat(glb.vertex[glb.indices[index + 1] + 1], " data: "))
+                io.write("\ndata: "..table.concat(glb.vertex[glb.indices[index + 2] + 1], " data: "))
+            end
+        -- Triangle primitives are defined around a shared common vertex
+        elseif mesh_mode == 6 then
+            if index > 1 and glb.indices[index + 1] ~= nil then
+                file_num  = file_num + 1
+                if index > 2 then
+                    io.close(cvxshp_file)
+                end
+                print("Generated "..glb.path.."-convexshapes"..glb.name..'-'..tostring(file_num)..".convexshape")
+                cvxshp_file = io.open(glb.path.."-convexshapes"..glb.name..'-'..tostring(file_num)..".convexshape", "w+")
+                io.output(cvxshp_file)
+                io.write("shape_type: TYPE_HULL")
+                io.write("\ndata: "..table.concat(glb.vertex[glb.indices[index] + 1], " data: "))
+                io.write("\ndata: "..table.concat(glb.vertex[glb.indices[index + 1] + 1], " data: "))
+                io.write("\ndata: "..table.concat(glb.vertex[glb.indices[1] + 1], " data: "))          
+            end
         end
-        io.write(glb.vertex[value + 1])
     end
     io.close(cvxshp_file)
 
@@ -254,8 +329,8 @@ function M.generate_convexshape(glb_path)
         io.write("  \"mass: 0.0\\n\"\n")
         io.write("  \"friction: 0.1\\n\"\n")
         io.write("  \"restitution: 0.5\\n\"\n")
-        io.write("  \"group: \\\"default\\\"\\n\"\n")
-        io.write("  \"mask: \\\"default\\\"\\n\"\n")
+        io.write("  \"group: \\\"world\\\"\\n\"\n")
+        io.write("  \"mask: \\\"world, marbles\\\"\\n\"\n")
         io.write("  \"linear_damping: 0.0\\n\"\n")
         io.write("  \"angular_damping: 0.0\\n\"\n")
         io.write("  \"locked_rotation: false\\n\"\n")
